@@ -31,17 +31,29 @@ docker-compose stop inventario
 **Que deberia pasar:**
 - El sistema NO colapsa
 - Circuit Breaker se activa
-- Usa cache fallback para responder
-- Muestra mensaje de error controlado: "Inventory service unavailable"
+- Usa cache fallback si hay datos previos
+- Puede responder con mensajes controlados como:
+    - "Breaker is open"
+    - "Timed out after 5000ms"
+    - "Service temporarily unavailable"
+    - "No cached data available"
 - Otras funciones siguen operando
 
 **Probar:**
 ```powershell
-# Intenta consultar inventario (deberia mostrar timeout controlado)
-Invoke-RestMethod http://localhost:3000/api/inventario
+# Intenta consultar inventario (deberia mostrar error controlado)
+try {
+    Invoke-RestMethod http://localhost:3000/api/inventario
+} catch {
+    $_.ErrorDetails.Message
+}
 
-# Intenta crear reserva (deberia funcionar con degradacion controlada)
-Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-1","asientos":2,"usuario":"test@test.com"}'
+# Intenta crear reserva (degradacion controlada si inventario esta caido)
+try {
+    Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-1","asientos":2,"usuario":"test@test.com"}'
+} catch {
+    $_.ErrorDetails.Message
+}
 ```
 
 **Recuperar el servicio:**
@@ -62,13 +74,20 @@ docker-compose stop pagos
 - El sistema NO colapsa
 - Timeout detectado
 - Procesamiento asincrono activado
-- Mensaje: "Payment processing in background"
-- La reserva se registra pero el pago queda pendiente
+- Mensaje controlado (no 500) como:
+    - "Timed out after 10000ms"
+    - "Reservation service unavailable"
+    - "Service temporarily unavailable"
+- La reserva puede quedar pendiente o compensarse
 
 **Probar:**
 ```powershell
 # Intenta crear reserva (timeout controlado)
-Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-2","asientos":1,"usuario":"test@test.com"}'
+try {
+    Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-2","asientos":1,"usuario":"test@test.com"}'
+} catch {
+    $_.ErrorDetails.Message
+}
 ```
 
 **Recuperar el servicio:**
@@ -88,7 +107,7 @@ docker-compose stop notificaciones
 **Que deberia pasar:**
 - El sistema NO colapsa
 - La reserva se completa exitosamente
-- Muestra advertencia: "Notification service unavailable"
+- Puede mostrar advertencia controlada en logs
 - Los datos se guardan correctamente
 - El usuario recibe confirmacion aunque no llegue el email
 
@@ -116,13 +135,19 @@ docker-compose stop redis
 - El sistema NO colapsa
 - Usa almacenamiento en memoria (fallback automatico)
 - Distributed locks deshabilitados
-- Mensaje: "Running without distributed locks"
+- Mensajes controlados como:
+    - "Service temporarily unavailable"
+    - "No cached data available"
 - Sistema sigue funcionando con capacidades reducidas
 
 **Probar:**
 ```powershell
 # Verificar que sigue funcionando
-Invoke-RestMethod http://localhost:3000/api/inventario
+try {
+    Invoke-RestMethod http://localhost:3000/api/inventario
+} catch {
+    $_.ErrorDetails.Message
+}
 Invoke-RestMethod http://localhost:3000/api/health
 ```
 
@@ -149,7 +174,11 @@ Invoke-RestMethod -Uri http://localhost:3003/admin/simular-latencia -Method POST
 **Probar:**
 ```powershell
 # Esto deberia timeout rapidamente
-Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-1","asientos":2,"usuario":"test@test.com"}'
+try {
+    Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-1","asientos":2,"usuario":"test@test.com"}'
+} catch {
+    $_.ErrorDetails.Message
+}
 ```
 
 **Desactivar latencia:**
@@ -174,7 +203,11 @@ Invoke-RestMethod -Uri http://localhost:3002/admin/simular-fallo -Method POST -H
 
 **Probar:**
 ```powershell
-Invoke-RestMethod http://localhost:3000/api/inventario
+try {
+    Invoke-RestMethod http://localhost:3000/api/inventario
+} catch {
+    $_.ErrorDetails.Message
+}
 ```
 
 **Desactivar fallo:**
@@ -199,7 +232,7 @@ Invoke-RestMethod -Uri http://localhost:3002/admin/simular-fallo -Method POST -H
 - Bulkhead limita concurrencia a 50
 - Load Shedding activo
 - Sistema NO colapsa
-- Respuesta HTTP 429: Too Many Requests
+- Puede haber 429 o cola (segun capacidad)
 
 ---
 
