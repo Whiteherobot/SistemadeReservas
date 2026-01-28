@@ -74,6 +74,12 @@ const inventarioClient = createResilientHttpClient(INVENTARIO_URL, {
   }
 });
 
+const INVENTARIO_CACHE_TTL_MS = 30000;
+const inventarioCache = {
+  data: null,
+  timestamp: null
+};
+
 app.use(limiter);
 
 app.get('/api', (req, res) => {
@@ -131,9 +137,10 @@ app.get('/api/reservas', async (req, res) => {
       });
     }
     
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
+    res.status(503).json({ 
+      error: 'Service temporarily unavailable',
+      message: 'Please try again in a few seconds',
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -176,9 +183,10 @@ app.post('/api/reservas', strictLimiter, async (req, res) => {
       });
     }
     
-    res.status(500).json({ 
-      error: 'Failed to process reservation',
-      message: error.message 
+    res.status(503).json({ 
+      error: 'Reservation service unavailable',
+      message: 'Please try again in a few seconds',
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -200,7 +208,11 @@ app.get('/api/reservas/:id', async (req, res) => {
       return res.status(404).json({ error: 'Reservation not found' });
     }
     
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(503).json({ 
+      error: 'Service temporarily unavailable',
+      message: 'Please try again in a few seconds',
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -231,9 +243,20 @@ app.get('/api/inventario', async (req, res) => {
     
     const response = await inventarioClient.get('/inventario');
     
+    inventarioCache.data = response.data;
+    inventarioCache.timestamp = Date.now();
+    
     res.json(response.data);
   } catch (error) {
     logger.error(`Error obteniendo inventario: ${error.message}`);
+    
+    const cacheAge = inventarioCache.timestamp ? Date.now() - inventarioCache.timestamp : null;
+    const cacheValid = inventarioCache.data && cacheAge !== null && cacheAge <= INVENTARIO_CACHE_TTL_MS;
+    
+    if (cacheValid) {
+      res.set('X-Inventory-Cache', 'true');
+      return res.json(inventarioCache.data);
+    }
     
     if (error.message && error.message.includes('breaker')) {
       return res.status(503).json({
@@ -242,9 +265,10 @@ app.get('/api/inventario', async (req, res) => {
       });
     }
     
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
+    return res.status(503).json({
+      error: 'Inventory service unavailable',
+      message: 'No cached data available',
+      timestamp: new Date().toISOString()
     });
   }
 });

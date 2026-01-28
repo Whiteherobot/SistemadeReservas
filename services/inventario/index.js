@@ -27,6 +27,13 @@ const redis = new Redis(REDIS_URL, {
 
 let redisConnected = false;
 
+redis.on('error', (error) => {
+  if (redisConnected) {
+    logger.warn(`Redis connection lost: ${error.message}. Switching to in-memory storage.`);
+  }
+  redisConnected = false;
+});
+
 redis.connect().then(() => {
   logger.info('Redis connected successfully');
   redisConnected = true;
@@ -82,11 +89,18 @@ app.get('/inventario/:eventoId', async (req, res) => {
     let evento = null;
     
     if (redisConnected) {
-      const eventoData = await redis.get(`inventario:${eventoId}`);
-      if (eventoData) {
-        evento = JSON.parse(eventoData);
+      try {
+        const eventoData = await redis.get(`inventario:${eventoId}`);
+        if (eventoData) {
+          evento = JSON.parse(eventoData);
+        }
+      } catch (error) {
+        logger.warn(`Redis error reading evento ${eventoId}: ${error.message}. Falling back to memory.`);
+        redisConnected = false;
       }
-    } else {
+    }
+    
+    if (!evento) {
       evento = inventarioMemoria.get(eventoId);
     }
     
@@ -110,7 +124,10 @@ app.get('/inventario/:eventoId', async (req, res) => {
 
   } catch (error) {
     logger.error(`Error consulting inventory: ${error.message}`);
-    res.status(500).json({ error: 'Error consulting inventory' });
+    res.status(503).json({ 
+      error: 'Inventory service unavailable',
+      message: 'Please try again in a few seconds'
+    });
   }
 });
 
@@ -121,14 +138,21 @@ app.get('/inventario', async (req, res) => {
     let eventos = [];
     
     if (redisConnected) {
-      const keys = await redis.keys('inventario:*');
-      for (const key of keys) {
-        const eventoData = await redis.get(key);
-        if (eventoData) {
-          eventos.push(JSON.parse(eventoData));
+      try {
+        const keys = await redis.keys('inventario:*');
+        for (const key of keys) {
+          const eventoData = await redis.get(key);
+          if (eventoData) {
+            eventos.push(JSON.parse(eventoData));
+          }
         }
+      } catch (error) {
+        logger.warn(`Redis error listing inventory: ${error.message}. Falling back to memory.`);
+        redisConnected = false;
       }
-    } else {
+    }
+    
+    if (!redisConnected) {
       eventos = Array.from(inventarioMemoria.values());
     }
 
@@ -137,7 +161,10 @@ app.get('/inventario', async (req, res) => {
 
   } catch (error) {
     logger.error(`Error getting inventory: ${error.message}`);
-    res.status(500).json({ error: 'Error getting inventory' });
+    res.status(503).json({ 
+      error: 'Inventory service unavailable',
+      message: 'Please try again in a few seconds'
+    });
   }
 });
 
@@ -181,7 +208,8 @@ app.post('/inventario/:eventoId/reservar', async (req, res) => {
       });
     }
 
-    const script = `
+    try {
+      const script = `
       local key = KEYS[1]
       local cantidad = tonumber(ARGV[1])
       
@@ -202,20 +230,51 @@ app.post('/inventario/:eventoId/reservar', async (req, res) => {
       return eventoData.asientosDisponibles
     `;
 
-    const result = await redis.eval(
-      script,
-      1,
-      `inventario:${eventoId}`,
-      cantidad
-    );
+      const result = await redis.eval(
+        script,
+        1,
+        `inventario:${eventoId}`,
+        cantidad
+      );
 
-    logger.info(`Reservation successful. Remaining seats: ${result}`);
+      logger.info(`Reservation successful. Remaining seats: ${result}`);
+      
+      return res.json({
+        success: true,
+        eventoId,
+        cantidadReservada: cantidad,
+        asientosRestantes: result
+      });
+    } catch (error) {
+      logger.warn(`Redis error reserving seats: ${error.message}. Falling back to memory.`);
+      redisConnected = false;
+    }
     
-    res.json({
+    const evento = inventarioMemoria.get(eventoId);
+    
+    if (!evento) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    
+    if (evento.asientosDisponibles < cantidad) {
+      return res.status(409).json({ 
+        error: 'Insufficient seats',
+        disponibles: evento.asientosDisponibles,
+        solicitados: cantidad
+      });
+    }
+    
+    evento.asientosDisponibles -= cantidad;
+    inventarioMemoria.set(eventoId, evento);
+    
+    logger.info(`Reservation completed (fallback) - Remaining seats: ${evento.asientosDisponibles}`);
+    
+    return res.json({
       success: true,
       eventoId,
-      cantidadReservada: cantidad,
-      asientosRestantes: result
+      nombre: evento.nombre,
+      asientosReservados: cantidad,
+      asientosDisponibles: evento.asientosDisponibles
     });
 
   } catch (error) {
@@ -231,7 +290,10 @@ app.post('/inventario/:eventoId/reservar', async (req, res) => {
       return res.status(404).json({ error: 'Event not found' });
     }
     
-    res.status(500).json({ error: 'Error processing reservation' });
+    res.status(503).json({ 
+      error: 'Inventory service unavailable',
+      message: 'Please try again in a few seconds'
+    });
   }
 });
 
@@ -249,17 +311,24 @@ app.post('/inventario/:eventoId/liberar', async (req, res) => {
     let evento = null;
     
     if (redisConnected) {
-      const eventoData = await redis.get(`inventario:${eventoId}`);
-      
-      if (!eventoData) {
-        return res.status(404).json({ error: 'Event not found' });
-      }
+      try {
+        const eventoData = await redis.get(`inventario:${eventoId}`);
+        
+        if (!eventoData) {
+          return res.status(404).json({ error: 'Event not found' });
+        }
 
-      evento = JSON.parse(eventoData);
-      evento.asientosDisponibles += cantidad;
-      
-      await redis.set(`inventario:${eventoId}`, JSON.stringify(evento));
-    } else {
+        evento = JSON.parse(eventoData);
+        evento.asientosDisponibles += cantidad;
+        
+        await redis.set(`inventario:${eventoId}`, JSON.stringify(evento));
+      } catch (error) {
+        logger.warn(`Redis error releasing seats: ${error.message}. Falling back to memory.`);
+        redisConnected = false;
+      }
+    }
+    
+    if (!redisConnected) {
       evento = inventarioMemoria.get(eventoId);
       
       if (!evento) {
@@ -281,7 +350,10 @@ app.post('/inventario/:eventoId/liberar', async (req, res) => {
 
   } catch (error) {
     logger.error(`Error releasing seats: ${error.message}`);
-    res.status(500).json({ error: 'Error releasing seats' });
+    res.status(503).json({ 
+      error: 'Inventory service unavailable',
+      message: 'Please try again in a few seconds'
+    });
   }
 });
 

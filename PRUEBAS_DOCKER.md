@@ -37,11 +37,11 @@ docker-compose stop inventario
 
 **Probar:**
 ```powershell
-# Intenta consultar inventario (deberia usar cache)
-curl http://localhost:3000/api/inventario
+# Intenta consultar inventario (deberia mostrar timeout controlado)
+Invoke-RestMethod http://localhost:3000/api/inventario
 
 # Intenta crear reserva (deberia funcionar con degradacion controlada)
-curl -X POST http://localhost:3000/api/reservas -H "Content-Type: application/json" -d "{\"eventoId\":\"evento-1\",\"asientos\":2,\"usuario\":\"test@test.com\"}"
+Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-1","asientos":2,"usuario":"test@test.com"}'
 ```
 
 **Recuperar el servicio:**
@@ -68,7 +68,7 @@ docker-compose stop pagos
 **Probar:**
 ```powershell
 # Intenta crear reserva (timeout controlado)
-curl -X POST http://localhost:3000/api/reservas -H "Content-Type: application/json" -d "{\"eventoId\":\"evento-2\",\"asientos\":1,\"usuario\":\"test@test.com\"}"
+Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-2","asientos":1,"usuario":"test@test.com"}'
 ```
 
 **Recuperar el servicio:**
@@ -95,7 +95,7 @@ docker-compose stop notificaciones
 **Probar:**
 ```powershell
 # Crear reserva (deberia completarse sin notificacion)
-curl -X POST http://localhost:3000/api/reservas -H "Content-Type: application/json" -d "{\"eventoId\":\"evento-3\",\"asientos\":3,\"usuario\":\"test@test.com\"}"
+Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-3","asientos":3,"usuario":"test@test.com"}'
 ```
 
 **Recuperar el servicio:**
@@ -122,8 +122,8 @@ docker-compose stop redis
 **Probar:**
 ```powershell
 # Verificar que sigue funcionando
-curl http://localhost:3000/api/inventario
-curl http://localhost:3000/api/health
+Invoke-RestMethod http://localhost:3000/api/inventario
+Invoke-RestMethod http://localhost:3000/api/health
 ```
 
 **Recuperar Redis:**
@@ -137,7 +137,7 @@ docker-compose start redis
 
 **Activar latencia de 20 segundos:**
 ```powershell
-curl -X POST http://localhost:3003/admin/simular-latencia -H "Content-Type: application/json" -d "{\"activar\":true}"
+Invoke-RestMethod -Uri http://localhost:3003/admin/simular-latencia -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"activar":true}'
 ```
 
 **Que deberia pasar:**
@@ -149,12 +149,12 @@ curl -X POST http://localhost:3003/admin/simular-latencia -H "Content-Type: appl
 **Probar:**
 ```powershell
 # Esto deberia timeout rapidamente
-curl -X POST http://localhost:3000/api/reservas -H "Content-Type: application/json" -d "{\"eventoId\":\"evento-1\",\"asientos\":2,\"usuario\":\"test@test.com\"}"
+Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-1","asientos":2,"usuario":"test@test.com"}'
 ```
 
 **Desactivar latencia:**
 ```powershell
-curl -X POST http://localhost:3003/admin/simular-latencia -H "Content-Type: application/json" -d "{\"activar\":false}"
+Invoke-RestMethod -Uri http://localhost:3003/admin/simular-latencia -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"activar":false}'
 ```
 
 ---
@@ -163,7 +163,7 @@ curl -X POST http://localhost:3003/admin/simular-latencia -H "Content-Type: appl
 
 **Activar fallo:**
 ```powershell
-curl -X POST http://localhost:3002/admin/simular-fallo -H "Content-Type: application/json" -d "{\"activar\":true}"
+Invoke-RestMethod -Uri http://localhost:3002/admin/simular-fallo -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"activar":true}'
 ```
 
 **Que deberia pasar:**
@@ -174,12 +174,12 @@ curl -X POST http://localhost:3002/admin/simular-fallo -H "Content-Type: applica
 
 **Probar:**
 ```powershell
-curl http://localhost:3000/api/inventario
+Invoke-RestMethod http://localhost:3000/api/inventario
 ```
 
 **Desactivar fallo:**
 ```powershell
-curl -X POST http://localhost:3002/admin/simular-fallo -H "Content-Type: application/json" -d "{\"activar\":false}"
+Invoke-RestMethod -Uri http://localhost:3002/admin/simular-fallo -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"activar":false}'
 ```
 
 ---
@@ -207,7 +207,7 @@ curl -X POST http://localhost:3002/admin/simular-fallo -H "Content-Type: applica
 
 ### Ver metricas del sistema:
 ```powershell
-curl http://localhost:3000/api/metrics
+Invoke-RestMethod http://localhost:3000/api/metrics
 ```
 
 Deberia mostrar:
@@ -218,7 +218,7 @@ Deberia mostrar:
 
 ### Ver estado de salud:
 ```powershell
-curl http://localhost:3000/api/health
+Invoke-RestMethod http://localhost:3000/api/health
 ```
 
 ### Ver logs de tolerancia a fallos:
@@ -284,7 +284,7 @@ docker-compose up --build -d inventario
 ```powershell
 # 1. Verificar estado inicial
 Write-Host "1. Verificando estado inicial..."
-curl http://localhost:3000/api/health
+Invoke-RestMethod http://localhost:3000/api/health
 
 # 2. Apagar inventario
 Write-Host "`n2. Apagando servicio de inventario..."
@@ -293,7 +293,11 @@ Start-Sleep -Seconds 2
 
 # 3. Probar que sigue funcionando
 Write-Host "`n3. Probando con inventario caido..."
-curl http://localhost:3000/api/inventario
+try {
+    Invoke-RestMethod http://localhost:3000/api/inventario
+} catch {
+    Write-Host "Timeout controlado detectado (ESPERADO)" -ForegroundColor Yellow
+}
 
 # 4. Recuperar inventario
 Write-Host "`n4. Recuperando inventario..."
@@ -302,21 +306,25 @@ Start-Sleep -Seconds 3
 
 # 5. Inyectar latencia
 Write-Host "`n5. Inyectando latencia en pagos..."
-curl -X POST http://localhost:3003/admin/simular-latencia -H "Content-Type: application/json" -d "{\"activar\":true}"
+Invoke-RestMethod -Uri http://localhost:3003/admin/simular-latencia -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"activar":true}'
 
 # 6. Probar timeout
 Write-Host "`n6. Probando timeout..."
-curl -X POST http://localhost:3000/api/reservas -H "Content-Type: application/json" -d "{\"eventoId\":\"evento-1\",\"asientos\":1,\"usuario\":\"test@test.com\"}"
+try {
+    Invoke-RestMethod -Uri http://localhost:3000/api/reservas -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"eventoId":"evento-1","asientos":1,"usuario":"test@test.com"}'
+} catch {
+    Write-Host "Timeout detectado (ESPERADO)" -ForegroundColor Yellow
+}
 
 # 7. Desactivar latencia
 Write-Host "`n7. Desactivando latencia..."
-curl -X POST http://localhost:3003/admin/simular-latencia -H "Content-Type: application/json" -d "{\"activar\":false}"
+Invoke-RestMethod -Uri http://localhost:3003/admin/simular-latencia -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"activar":false}'
 
 # 8. Ver metricas finales
 Write-Host "`n8. Metricas del sistema:"
-curl http://localhost:3000/api/metrics
+Invoke-RestMethod http://localhost:3000/api/metrics
 
-Write-Host "`n`nPRUEBA COMPLETA FINALIZADA - El sistema NO colapso!"
+Write-Host "`n`nPRUEBA COMPLETA FINALIZADA - El sistema NO colapso!" -ForegroundColor Green
 ```
 
 ---
