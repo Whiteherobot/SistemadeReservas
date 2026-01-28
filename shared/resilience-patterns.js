@@ -6,8 +6,8 @@ function createCircuitBreaker(fn, options = {}) {
   const defaultOptions = {
     timeout: 5000,
     errorThresholdPercentage: 50,
-    resetTimeout: 10000,
-    volumeThreshold: 10,
+    resetTimeout: 3000,
+    volumeThreshold: 2,
     name: 'default-breaker'
   };
 

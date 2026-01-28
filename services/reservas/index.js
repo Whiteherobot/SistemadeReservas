@@ -58,7 +58,7 @@ const inventarioClient = createResilientHttpClient(INVENTARIO_URL, {
   breakerOptions: {
     timeout: 3000,
     errorThresholdPercentage: 50,
-    resetTimeout: 15000,
+    resetTimeout: 5000,
     volumeThreshold: 3
   }
 });
@@ -99,7 +99,7 @@ const pagosClient = createResilientHttpClient(PAGOS_URL, {
   breakerOptions: {
     timeout: 25000,
     errorThresholdPercentage: 70,
-    resetTimeout: 30000,
+    resetTimeout: 8000,
     volumeThreshold: 3
   }
 });
@@ -135,7 +135,7 @@ const notificacionesClient = createResilientHttpClient(NOTIFICACIONES_URL, {
   breakerOptions: {
     timeout: 3000,
     errorThresholdPercentage: 80,
-    resetTimeout: 10000
+    resetTimeout: 5000
   }
 });
 

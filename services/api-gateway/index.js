@@ -58,19 +58,19 @@ const reservasClient = createResilientHttpClient(RESERVAS_URL, {
   breakerOptions: {
     timeout: 10000,
     errorThresholdPercentage: 60,
-    resetTimeout: 15000,
-    volumeThreshold: 5
+    resetTimeout: 5000,
+    volumeThreshold: 3
   }
 });
 
 const inventarioClient = createResilientHttpClient(INVENTARIO_URL, {
   timeout: 5000,
-  retries: 1,
+  retries: 0,
   breakerOptions: {
     timeout: 5000,
-    errorThresholdPercentage: 70,
-    resetTimeout: 10000,
-    volumeThreshold: 3
+    errorThresholdPercentage: 50,
+    resetTimeout: 5000,
+    volumeThreshold: 2
   }
 });
 
@@ -521,7 +521,21 @@ async function ejecutarDemoInventarioFantasma(params = {}) {
     steps[1].status = 'completado';
     steps[1].result = 'Fallo simulado - Servicio respondiendo con errores';
     
-    steps.push({ step: 3, action: `Intentar crear reserva con inventario caido (${eventoId})`, status: 'iniciando' });
+    steps.push({ step: 3, action: 'Forzar multiples intentos para abrir Circuit Breaker', status: 'iniciando' });
+    let intentosFallidos = 0;
+    for (let i = 0; i < 5; i++) {
+      try {
+        await inventarioClient.get(`/inventario/${eventoId}`);
+      } catch (error) {
+        intentosFallidos++;
+      }
+    }
+    steps[2].status = 'completado';
+    steps[2].result = `${intentosFallidos} intentos fallidos - Circuit Breaker deberia abrirse`;
+    
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    steps.push({ step: 4, action: `Intentar crear reserva con Circuit Breaker ABIERTO`, status: 'iniciando' });
     try {
       const response = await reservasClient.post('/reservas', {
         eventoId: eventoId,
@@ -529,21 +543,23 @@ async function ejecutarDemoInventarioFantasma(params = {}) {
         usuario: 'test-failover@demo.com',
         metodoPago: 'tarjeta'
       });
-      steps[2].status = 'completado';
-      steps[2].result = `Reserva exitosa usando CACHE del sistema - ID: ${response.data.reserva.id}`;
+      steps[3].status = 'completado';
+      steps[3].result = `Reserva exitosa usando CACHE del sistema - ID: ${response.data.reserva.id}`;
     } catch (error) {
-      steps[2].status = 'circuit-breaker-activado';
-      steps[2].result = `Circuit breaker protegiendo: ${error.message}`;
+      steps[3].status = 'circuit-breaker-activado';
+      steps[3].result = `Circuit breaker protegiendo: ${error.message}`;
     }
     
-    steps.push({ step: 4, action: 'Desactivar fallo y recuperar sistema', status: 'iniciando' });
+    steps.push({ step: 5, action: 'Desactivar fallo y recuperar sistema', status: 'iniciando' });
     await axios.post(`${INVENTARIO_URL}/admin/simular-fallo`, { activar: false });
-    steps[3].status = 'completado';
-    
-    steps.push({ step: 5, action: 'Consultar inventario DESPUES de recuperacion', status: 'iniciando' });
-    const invDespues = await inventarioClient.get('/inventario/evento-1');
     steps[4].status = 'completado';
-    steps[4].result = `Evento-1: ${invDespues.data.asientosDisponibles} asientos disponibles - Sistema recuperado`;
+    
+    await new Promise(resolve => setTimeout(resolve, 6000));
+    
+    steps.push({ step: 6, action: 'Consultar inventario DESPUES de recuperacion', status: 'iniciando' });
+    const invDespues = await inventarioClient.get('/inventario/evento-1');
+    steps[5].status = 'completado';
+    steps[5].result = `Evento-1: ${invDespues.data.asientosDisponibles} asientos disponibles - Sistema recuperado`;
     
     return {
       success: true,
