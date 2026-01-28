@@ -164,6 +164,83 @@
             cursor: not-allowed;
         }
 
+        .demo-menu {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .menu-list {
+            background: #f9fafb;
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .menu-button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            border: 1px solid #e5e7eb;
+            background: white;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: border 0.2s, background 0.2s;
+            font-size: 0.9em;
+        }
+
+        .menu-button.active {
+            border-color: #667eea;
+            background: #eef2ff;
+        }
+
+        .demo-visual {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .demo-visual h3 {
+            font-size: 1em;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+
+        .status-pill {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .status-idle { background: #e5e7eb; color: #374151; }
+        .status-running { background: #fde68a; color: #92400e; }
+        .status-success { background: #bbf7d0; color: #166534; }
+        .status-error { background: #fecaca; color: #991b1b; }
+
+        .impact-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .impact-item {
+            padding: 6px 0;
+            border-bottom: 1px solid #f3f4f6;
+            color: #4b5563;
+            font-size: 0.9em;
+        }
+
+        .impact-item:last-child {
+            border-bottom: none;
+        }
+
         .demo-input {
             width: 100%;
             padding: 8px 12px;
@@ -315,6 +392,29 @@
         <div class="main-content">
             <div class="section">
                 <h2>Demostraciones de Fallos</h2>
+                <div class="demo-menu">
+                    <div class="menu-list">
+                        <button class="menu-button active" data-demo="inventario-fantasma" onclick="selectDemo('inventario-fantasma')">Fallo #1: Inventario Fantasma</button>
+                        <button class="menu-button" data-demo="pasarela-lenta" onclick="selectDemo('pasarela-lenta')">Fallo #2: Pasarela Lenta</button>
+                        <button class="menu-button" data-demo="diluvio-peticiones" onclick="selectDemo('diluvio-peticiones')">Fallo #3: Diluvio de Peticiones</button>
+                        <button class="menu-button" data-demo="condicion-carrera" onclick="selectDemo('condicion-carrera')">Fallo #4: Condición de Carrera</button>
+                    </div>
+                    <div class="demo-visual">
+                        <h3 id="demo-visual-title">Inventario Fantasma</h3>
+                        <div>
+                            Estado actual:
+                            <span id="demo-status" class="status-pill status-idle">Listo</span>
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <strong>Impacto esperado:</strong>
+                            <ul class="impact-list" id="demo-impact-list"></ul>
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <strong>Impacto observado:</strong>
+                            <ul class="impact-list" id="demo-observed-list"></ul>
+                        </div>
+                    </div>
+                </div>
                 <div class="demo-grid">
                     <div class="demo-card">
                         <div class="demo-title">FALLO #1: Inventario Fantasma</div>
@@ -467,6 +567,41 @@
             { name: 'notificaciones', port: 3004, url: 'http://localhost:3004/health' }
         ];
 
+        const demoConfig = {
+            'inventario-fantasma': {
+                title: 'Inventario Fantasma',
+                impact: [
+                    'Inventario responde con error o timeout',
+                    'Circuit Breaker protege el sistema',
+                    'Cache fallback si hay datos previos'
+                ]
+            },
+            'pasarela-lenta': {
+                title: 'Pasarela Lenta',
+                impact: [
+                    'Timeout detectado en pagos',
+                    'Reserva no bloquea al usuario',
+                    'Procesamiento asincrono en background'
+                ]
+            },
+            'diluvio-peticiones': {
+                title: 'Diluvio de Peticiones',
+                impact: [
+                    'Rate Limiting limita la carga',
+                    'Bulkhead protege la concurrencia',
+                    'Cola administra exceso de solicitudes'
+                ]
+            },
+            'condicion-carrera': {
+                title: 'Condicion de Carrera',
+                impact: [
+                    'Locks distribuidos evitan sobreventa',
+                    'Solo un usuario obtiene el ultimo asiento',
+                    'Rechazos controlados por disponibilidad'
+                ]
+            }
+        };
+
         function addLog(message, type = 'info') {
             const logsContainer = document.getElementById('logs');
             const time = new Date().toLocaleTimeString();
@@ -480,6 +615,67 @@
         function clearLogs() {
             const logsContainer = document.getElementById('logs');
             logsContainer.innerHTML = '';
+        }
+
+        function selectDemo(demoName) {
+            const config = demoConfig[demoName];
+            if (!config) return;
+
+            document.getElementById('demo-visual-title').textContent = config.title;
+            const impactList = document.getElementById('demo-impact-list');
+            impactList.innerHTML = '';
+            config.impact.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'impact-item';
+                li.textContent = item;
+                impactList.appendChild(li);
+            });
+
+            const observedList = document.getElementById('demo-observed-list');
+            observedList.innerHTML = '<li class="impact-item">Sin ejecucion todavia</li>';
+
+            document.querySelectorAll('.menu-button').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.demo === demoName);
+            });
+        }
+
+        function setDemoStatus(status, type) {
+            const statusEl = document.getElementById('demo-status');
+            statusEl.className = `status-pill status-${type}`;
+            statusEl.textContent = status;
+        }
+
+        function updateObserved(result) {
+            const observedList = document.getElementById('demo-observed-list');
+            observedList.innerHTML = '';
+
+            const items = [];
+            if (result.metricas) {
+                Object.entries(result.metricas).forEach(([key, value]) => {
+                    if (key !== 'errors') {
+                        items.push(`${key}: ${value}`);
+                    }
+                });
+            }
+
+            if (result.steps) {
+                result.steps.slice(0, 3).forEach(step => {
+                    if (step.result) {
+                        items.push(step.result);
+                    }
+                });
+            }
+
+            if (items.length === 0) {
+                items.push('Sin datos observados');
+            }
+
+            items.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'impact-item';
+                li.textContent = item;
+                observedList.appendChild(li);
+            });
         }
 
         async function checkServiceHealth(service) {
@@ -541,6 +737,9 @@
                 params.usuarios = parseInt(document.getElementById('usuarios-demo4').value);
                 params.asientosDisponibles = parseInt(document.getElementById('asientos-demo4').value);
             }
+
+            selectDemo(demoName);
+            setDemoStatus('Ejecutando', 'running');
             
             clearLogs();
             addLog('='.repeat(80), 'info');
@@ -569,6 +768,8 @@
                 const result = await response.json();
                 
                 if (response.ok && result.success) {
+                    setDemoStatus('Completada', 'success');
+                    updateObserved(result);
                     addLog(`RESULTADO: COMPLETADA EXITOSAMENTE`, 'success');
                     addLog(`TIPO: ${result.description}`, 'info');
                     addLog('', 'info');
@@ -609,8 +810,10 @@
                     addLog('='.repeat(80), 'info');
                     
                 } else {
+                    setDemoStatus('Error controlado', 'error');
                     addLog(`RESULTADO: ERROR EN EJECUCION`, 'error');
                     addLog(`MENSAJE: ${result.error || 'Error desconocido'}`, 'error');
+                    updateObserved({ metricas: { error: result.error || 'Error desconocido' } });
                     if (result.steps) {
                         addLog('Pasos completados antes del error:', 'info');
                         result.steps.forEach(step => {
@@ -620,8 +823,10 @@
                     addLog('='.repeat(80), 'info');
                 }
             } catch (error) {
+                setDemoStatus('Error', 'error');
                 addLog(`RESULTADO: ERROR`, 'error');
                 addLog(`MENSAJE: ${error.message}`, 'error');
+                updateObserved({ metricas: { error: error.message } });
                 addLog('Accion: Verificar que todos los servicios esten corriendo', 'warn');
                 addLog('='.repeat(80), 'info');
             } finally {
@@ -660,6 +865,8 @@
         updateMetrics();
         setInterval(updateMetrics, 3000);
 
+        selectDemo('inventario-fantasma');
+        setDemoStatus('Listo', 'idle');
         addLog('Panel de control cargado', 'info');
         addLog('Verificando estado de servicios...', 'info');
     </script>
