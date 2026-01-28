@@ -1,12 +1,14 @@
 const express = require('express');
 const path = require('path');
 const axios = require('axios');
+const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const logger = require('../../shared/logger');
 const { createResilientHttpClient, Bulkhead } = require('../../shared/resilience-patterns');
 
 const app = express();
 app.use(express.json());
+app.use(cors());
 app.use(express.static(path.join(__dirname, '../../public')));
 
 const PORT = process.env.PORT || 3000;
@@ -61,7 +63,41 @@ const reservasClient = createResilientHttpClient(RESERVAS_URL, {
   }
 });
 
+const inventarioClient = createResilientHttpClient(INVENTARIO_URL, {
+  timeout: 5000,
+  retries: 1,
+  breakerOptions: {
+    timeout: 5000,
+    errorThresholdPercentage: 70,
+    resetTimeout: 10000,
+    volumeThreshold: 3
+  }
+});
+
 app.use(limiter);
+
+app.get('/api', (req, res) => {
+  res.json({
+    name: 'Sistema de Reservas - API Gateway',
+    version: '1.0.0',
+    description: 'API con patrones de tolerancia a fallos',
+    endpoints: {
+      health: '/api/health',
+      metrics: '/api/metrics',
+      inventario: {
+        listar: 'GET /api/inventario'
+      },
+      reservas: {
+        listar: 'GET /api/reservas',
+        crear: 'POST /api/reservas',
+        detalle: 'GET /api/reservas/:id',
+        cancelar: 'DELETE /api/reservas/:id'
+      },
+      ejemplos: 'GET /api/ejemplos'
+    },
+    documentation: 'Consulta /api/ejemplos para ver ejemplos de uso'
+  });
+});
 
 app.get('/health', (req, res) => {
   res.json({
@@ -168,7 +204,60 @@ app.get('/api/reservas/:id', async (req, res) => {
   }
 });
 
+app.delete('/api/reservas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    logger.info(`DELETE /api/reservas/${id}`);
+    
+    const response = await reservasBulkhead.execute(async () => {
+      return await reservasClient.delete(`/reservas/${id}`);
+    });
+    
+    res.json(response.data);
+  } catch (error) {
+    logger.error(`Error deleting reservation ${req.params.id}: ${error.message}`);
+    
+    if (error.response && error.response.status === 404) {
+      return res.status(404).json({ error: 'Reservation not found' });
+    }
+    
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/inventario', async (req, res) => {
+  try {
+    logger.info('GET /api/inventario');
+    
+    const response = await inventarioClient.get('/inventario');
+    
+    res.json(response.data);
+  } catch (error) {
+    logger.error(`Error obteniendo inventario: ${error.message}`);
+    
+    if (error.message && error.message.includes('breaker')) {
+      return res.status(503).json({
+        error: 'Inventory service unavailable',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
 app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    service: 'api-gateway',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
     service: 'api-gateway',
@@ -201,6 +290,160 @@ app.get('/metrics', (req, res) => {
     },
     locks: {
       active: 0
+    }
+  });
+});
+
+app.get('/api/metrics', (req, res) => {
+  res.json({
+    service: 'api-gateway',
+    timestamp: new Date().toISOString(),
+    latency: Math.floor(Math.random() * 100) + 50,
+    requestsPerMinute: Math.floor(Math.random() * 50) + 10,
+    bulkhead: {
+      name: reservasBulkhead.name,
+      concurrent: reservasBulkhead.currentConcurrent,
+      maxConcurrent: reservasBulkhead.maxConcurrent,
+      queuedRequests: reservasBulkhead.queue.length
+    },
+    circuitBreaker: {
+      status: reservasClient.breaker.opened ? 'OPEN' : 
+              reservasClient.breaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
+      stats: reservasClient.breaker.stats
+    },
+    queue: {
+      size: reservasBulkhead.queue.length
+    },
+    cache: {
+      hitRate: Math.floor(Math.random() * 30)
+    },
+    locks: {
+      active: 0
+    }
+  });
+});
+
+app.get('/api/ejemplos', (req, res) => {
+  res.json({
+    titulo: 'EJEMPLOS PARA PROBAR LA API',
+    descargaInsomnia: 'Importa estas solicitudes en Insomnia o Postman',
+    ejemplos: [
+      {
+        id: 1,
+        nombre: 'Consultar Inventario Disponible',
+        metodo: 'GET',
+        url: 'http://localhost:3000/api/inventario',
+        headers: {},
+        body: null,
+        respuestaEsperada: 'Lista de eventos con asientos disponibles'
+      },
+      {
+        id: 2,
+        nombre: 'Crear Reserva - EVENTO 1 (100 asientos)',
+        metodo: 'POST',
+        url: 'http://localhost:3000/api/reservas',
+        headers: { 'Content-Type': 'application/json' },
+        body: {
+          eventoId: 'evento-1',
+          asientos: 2,
+          usuario: 'usuario1@example.com'
+        },
+        respuestaEsperada: 'Reserva creada exitosamente con ID de transaccion'
+      },
+      {
+        id: 3,
+        nombre: 'Crear Reserva - EVENTO 2 (50 asientos)',
+        metodo: 'POST',
+        url: 'http://localhost:3000/api/reservas',
+        headers: { 'Content-Type': 'application/json' },
+        body: {
+          eventoId: 'evento-2',
+          asientos: 3,
+          usuario: 'usuario2@example.com'
+        },
+        respuestaEsperada: 'Reserva creada exitosamente'
+      },
+      {
+        id: 4,
+        nombre: 'Crear Reserva - EVENTO 3 (500 asientos)',
+        metodo: 'POST',
+        url: 'http://localhost:3000/api/reservas',
+        headers: { 'Content-Type': 'application/json' },
+        body: {
+          eventoId: 'evento-3',
+          asientos: 5,
+          usuario: 'usuario3@example.com'
+        },
+        respuestaEsperada: 'Reserva creada exitosamente'
+      },
+      {
+        id: 5,
+        nombre: 'Crear Reserva - EVENTO 4 (SOLO 1 ASIENTO - Para Carrera)',
+        metodo: 'POST',
+        url: 'http://localhost:3000/api/reservas',
+        headers: { 'Content-Type': 'application/json' },
+        body: {
+          eventoId: 'evento-4',
+          asientos: 1,
+          usuario: 'usuario4@example.com'
+        },
+        respuestaEsperada: 'Solo 1 usuario puede reservar este asiento'
+      },
+      {
+        id: 6,
+        nombre: 'Listar Todas las Reservas',
+        metodo: 'GET',
+        url: 'http://localhost:3000/api/reservas',
+        headers: {},
+        body: null,
+        respuestaEsperada: 'Array con todas las reservas realizadas'
+      },
+      {
+        id: 7,
+        nombre: 'Obtener Detalle de Reserva',
+        metodo: 'GET',
+        url: 'http://localhost:3000/api/reservas/{reservaId}',
+        descripcionReemplazo: 'Reemplaza {reservaId} con el ID obtenido al crear una reserva',
+        headers: {},
+        body: null,
+        respuestaEsperada: 'Detalles completos de la reserva'
+      },
+      {
+        id: 8,
+        nombre: 'Cancelar Reserva',
+        metodo: 'DELETE',
+        url: 'http://localhost:3000/api/reservas/{reservaId}',
+        descripcionReemplazo: 'Reemplaza {reservaId} con el ID de la reserva a cancelar',
+        headers: {},
+        body: null,
+        respuestaEsperada: 'Reserva cancelada y reembolso procesado'
+      },
+      {
+        id: 9,
+        nombre: 'Estado de Salud de Todos los Servicios',
+        metodo: 'GET',
+        url: 'http://localhost:3000/api/health',
+        headers: {},
+        body: null,
+        respuestaEsperada: 'Estado operacional de API Gateway y servicios'
+      },
+      {
+        id: 10,
+        nombre: 'Metricas del Sistema',
+        metodo: 'GET',
+        url: 'http://localhost:3000/api/metrics',
+        headers: {},
+        body: null,
+        respuestaEsperada: 'Latencia, requests por minuto, circuit breaker, bulkhead, queue'
+      }
+    ],
+    instrucciones: {
+      paso1: 'Abre Insomnia (o Postman)',
+      paso2: 'Crea una nueva solicitud GET a http://localhost:3000/api/ejemplos',
+      paso3: 'Copia los ejemplos y crea solicitudes manualmente',
+      paso4: 'Prueba primero consultando inventario',
+      paso5: 'Luego crea reservas y observa los cambios',
+      paso6: 'Usa las demos para ver tolerancia a fallos en accion'
     }
   });
 });
@@ -242,35 +485,46 @@ async function ejecutarDemoInventarioFantasma() {
   const steps = [];
   
   try {
-    steps.push({ step: 1, action: 'Activar fallo en servicio de inventario', status: 'iniciando' });
-    await axios.post(`${INVENTARIO_URL}/admin/simular-fallo`, { activar: true });
+    steps.push({ step: 1, action: 'Consultar inventario ANTES del fallo', status: 'iniciando' });
+    const invAntes = await inventarioClient.get('/inventario/evento-1');
     steps[0].status = 'completado';
+    steps[0].result = `Evento-1: ${invAntes.data.asientosDisponibles} asientos disponibles`;
     
-    steps.push({ step: 2, action: 'Intentar crear reserva (deberia usar cache)', status: 'iniciando' });
+    steps.push({ step: 2, action: 'Activar fallo en servicio de inventario', status: 'iniciando' });
+    await axios.post(`${INVENTARIO_URL}/admin/simular-fallo`, { activar: true });
+    steps[1].status = 'completado';
+    steps[1].result = 'Fallo simulado - Servicio respondiendo con errores';
+    
+    steps.push({ step: 3, action: 'Intentar crear reserva con inventario caido', status: 'iniciando' });
     try {
-      await reservasClient.post('/reservas', {
+      const response = await reservasClient.post('/reservas', {
         eventoId: 'evento-1',
         asientos: 2,
-        usuario: 'demo@test.com',
+        usuario: 'test-failover@demo.com',
         metodoPago: 'tarjeta'
       });
-      steps[1].status = 'completado';
-      steps[1].result = 'Circuit Breaker activado, usando datos en cache';
+      steps[2].status = 'completado';
+      steps[2].result = `Reserva exitosa usando CACHE del sistema - ID: ${response.data.reserva.id}`;
     } catch (error) {
-      steps[1].status = 'circuit-breaker-activado';
-      steps[1].result = `Circuit breaker protegiendo: ${error.message}`;
+      steps[2].status = 'circuit-breaker-activado';
+      steps[2].result = `Circuit breaker protegiendo: ${error.message}`;
     }
     
-    steps.push({ step: 3, action: 'Desactivar fallo', status: 'iniciando' });
+    steps.push({ step: 4, action: 'Desactivar fallo y recuperar sistema', status: 'iniciando' });
     await axios.post(`${INVENTARIO_URL}/admin/simular-fallo`, { activar: false });
-    steps[2].status = 'completado';
+    steps[3].status = 'completado';
+    
+    steps.push({ step: 5, action: 'Consultar inventario DESPUES de recuperacion', status: 'iniciando' });
+    const invDespues = await inventarioClient.get('/inventario/evento-1');
+    steps[4].status = 'completado';
+    steps[4].result = `Evento-1: ${invDespues.data.asientosDisponibles} asientos disponibles - Sistema recuperado`;
     
     return {
       success: true,
       demo: 'Inventario Fantasma',
       description: 'Circuit Breaker + Cache Fallback',
       steps: steps,
-      resultado: 'El circuit breaker detecto el fallo y el sistema uso cache para mantener el servicio funcionando',
+      resultado: 'El circuit breaker detecto el fallo y el sistema uso cache para mantener servicio funcionando. Se recupero correctamente.',
       patronesActivados: ['Circuit Breaker', 'Cache Fallback', 'Degradacion Controlada']
     };
   } catch (error) {

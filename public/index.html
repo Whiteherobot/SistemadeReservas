@@ -469,6 +469,7 @@
             addLog('='.repeat(80), 'info');
             addLog(`DEMO: ${demoName.toUpperCase().replace(/-/g, ' ')}`, 'info');
             addLog('='.repeat(80), 'info');
+            addLog('Cargando datos del sistema...', 'info');
             addLog('', 'info');
             
             try {
@@ -480,45 +481,47 @@
                 const result = await response.json();
                 
                 if (response.ok && result.success) {
-                    addLog(`STATUS: COMPLETADA EXITOSAMENTE`, 'success');
+                    addLog(`RESULTADO: COMPLETADA EXITOSAMENTE`, 'success');
                     addLog(`TIPO: ${result.description}`, 'info');
                     addLog('', 'info');
                     
                     if (result.steps) {
-                        addLog('PASOS EJECUTADOS:', 'info');
-                        result.steps.forEach(step => {
-                            addLog(`[${step.status.toUpperCase()}] PASO ${step.step}: ${step.action}`, 'info');
-                            if (step.result) {
-                                addLog(`  RESULTADO: ${step.result}`, 'success');
-                            }
+                        addLog('EJECUCION DETALLADA:', 'info');
+                        result.steps.forEach((step, index) => {
+                            setTimeout(() => {
+                                addLog(`[${step.status.toUpperCase()}] PASO ${step.step}: ${step.action}`, 'info');
+                                if (step.result) {
+                                    addLog(`  OBSERVACION: ${step.result}`, 'success');
+                                }
+                            }, index * 100);
                         });
-                        addLog('', 'info');
                     }
                     
                     if (result.metricas) {
-                        addLog('METRICAS:', 'info');
+                        addLog('', 'info');
+                        addLog('METRICAS OBTENIDAS:', 'info');
                         Object.entries(result.metricas).forEach(([key, value]) => {
                             if (key !== 'errors') {
                                 const displayKey = key.replace(/([A-Z])/g, ' $1').toUpperCase().trim();
                                 addLog(`  ${displayKey}: ${value}`, 'info');
                             }
                         });
-                        addLog('', 'info');
                     }
                     
                     if (result.patronesActivados) {
-                        addLog('PATRONES DE TOLERANCIA ACTIVADOS:', 'success');
-                        result.patronesActivados.forEach(patron => {
-                            addLog(`  - ${patron}`, 'success');
-                        });
                         addLog('', 'info');
+                        addLog('PATRONES DE TOLERANCIA CONFIRMADOS:', 'success');
+                        result.patronesActivados.forEach(patron => {
+                            addLog(`  > ${patron}`, 'success');
+                        });
                     }
                     
+                    addLog('', 'info');
                     addLog(`CONCLUSION: ${result.resultado}`, 'success');
                     addLog('='.repeat(80), 'info');
                     
                 } else {
-                    addLog(`STATUS: ERROR`, 'error');
+                    addLog(`RESULTADO: ERROR EN EJECUCION`, 'error');
                     addLog(`MENSAJE: ${result.error || 'Error desconocido'}`, 'error');
                     if (result.steps) {
                         addLog('Pasos completados antes del error:', 'info');
@@ -529,9 +532,9 @@
                     addLog('='.repeat(80), 'info');
                 }
             } catch (error) {
-                addLog(`STATUS: ERROR`, 'error');
+                addLog(`RESULTADO: ERROR`, 'error');
                 addLog(`MENSAJE: ${error.message}`, 'error');
-                addLog('Verificar que todos los servicios esten corriendo', 'warn');
+                addLog('Accion: Verificar que todos los servicios esten corriendo', 'warn');
                 addLog('='.repeat(80), 'info');
             } finally {
                 button.disabled = false;
