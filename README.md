@@ -1,76 +1,102 @@
-# Reservation System with Fault Tolerance
+#  Sistema de Reservas con Tolerancia a Fallos
 
-## Description
+##  Descripción
 
-This project implements a distributed ticket reservation system for events with advanced fault tolerance patterns. The system is designed to handle critical failures without collapsing, maintaining availability and data consistency.
+Este es un **sistema distribuido de reserva de entradas** para eventos implementado con patrones avanzados de **tolerancia a fallos y resiliencia**. El sistema está diseñado para manejar fallos críticos sin colapsar, manteniendo alta disponibilidad y consistencia de datos incluso bajo condiciones adversas.
 
-## Architecture
+###  Objetivo
+Demostrar cómo construir sistemas robustos en microservicios que sigan siendo funcionales cuando diferentes componentes fallan.
+
+##  Arquitectura
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                        Clients                                │
+│                    🖥️ Clientes Web                            │
 └────────────────────────┬─────────────────────────────────────┘
                          │
                          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                     API Gateway                               │
-│  • Rate Limiting (100 req/min, 20 req/min for reservations) │
-│  • Circuit Breaker                                           │
-│  • Bulkhead (50 max connections)                             │
+│                   🚪 API Gateway                              │
+│  ✓ Rate Limiting (100 req/min, 20 req/min para reservas)    │
+│  ✓ Circuit Breaker                                          │
+│  ✓ Bulkhead (50 conexiones máximas)                         │
 └────────────────────────┬─────────────────────────────────────┘
                          │
          ┌───────────────┼───────────────┬──────────────┐
          │               │               │              │
          ▼               ▼               ▼              ▼
 ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│  Reservas   │ │ Inventario  │ │   Pagos     │ │Notificaciones│
+│  📅 Reservas │ │ 📊 Inventario│ │ 💳 Pagos    │ │📬Notificaciones│
 │             │ │             │ │             │ │             │
-│ • Redlock   │ │ • Simulates │ │ • Simulates │ │ • Email/SMS │
-│ • Saga      │ │   outage    │ │   latency   │ │             │
-│ • Retry     │ │ • Atomic    │ │   (20s)     │ │             │
-│             │ │   operations│ │             │ │             │
+│ • Redlock   │ │ • Simula    │ │ • Simula    │ │ • Email/SMS │
+│ • Saga      │ │   caída     │ │   latencia  │ │             │
+│ • Retry     │ │ • Operaciones│ │   (20s)    │ │             │
+│             │ │   atómicas  │ │             │ │             │
 └──────┬──────┘ └──────┬──────┘ └─────────────┘ └─────────────┘
        │               │
        └───────┬───────┘
                ▼
-       ┌─────────────┐
-       │    Redis    │
-       │  • Storage  │
-       │  • Locks    │
-       │  • Cache    │
-       └─────────────┘
+       ┌─────────────────┐
+       │   📦 Redis      │
+       │  • Almacenamiento │
+       │  • Locks          │
+       │  • Caché          │
+       └─────────────────┘
 ```
 
-## Implemented Failures
+### Componentes
 
-### 1. Phantom Inventory (Total Service Outage)
-### 2. Slow Gateway (Payment Service Slowness - 20s)
-### 3. Request Flood (Gateway Overload)
-### 4. Race Condition (Last Seat Purchase)
+| Servicio | Puerto | Función |
+|----------|--------|---------|
+| **API Gateway** | 3000 | Enrutador central, limitación de tasa, protección |
+| **Reservas** | 3001 | Gestión de reservas y transacciones |
+| **Inventario** | 3002 | Control de disponibilidad de asientos |
+| **Pagos** | 3003 | Procesamiento de pagos |
+| **Notificaciones** | 3004 | Envío de confirmaciones (simulado) |
+| **Redis** | 6379 | Base de datos distribuida, locks, caché |
 
----
+##  Fallos Implementados
 
-## Installation and Execution
+El sistema simula y gestiona 4 escenarios críticos de fallo:
 
-### Prerequisites
+| # | Fallo | Síntoma | Patrón Aplicado |
+|---|-------|---------|-----------------|
+| 1️⃣ | **Inventario Fantasma** | El servicio de inventario cae completamente | Circuit Breaker + Timeout |
+| 2️⃣ | **Pasarela Lenta** | El servicio de pagos responde en 20 segundos | Timeout + Bulkhead |
+| 3️⃣ | **Diluvio de Peticiones** | Sobrecarga del API Gateway | Rate Limiting + Bulkhead |
+| 4️⃣ | **Condición de Carrera** | Múltiples usuarios compran el último asiento | Redlock Distribuido |
 
-- Node.js 18+
-- Docker and Docker Compose
-- Git
+Cada fallo tiene su **documentación detallada** en la carpeta `docs/` con explicaciones técnicas y soluciones.
+##  Instalación y Ejecución
 
-### Installation
+###  Requisitos Previos
+
+- **Node.js** 18 o superior
+- **Docker** y **Docker Compose**
+- **Git**
+
+###  Instalación Rápida (Con Docker)
 
 ```bash
+# 1. Clonar el repositorio
+git clone <repo-url>
 cd SistemadeReservas
 
+# 2. Instalar dependencias
 npm install
 
+# 3. Iniciar todos los servicios
 docker-compose up -d
 
+# 4. Ver logs en tiempo real
 docker-compose logs -f
 ```
 
-### Run Individual Services (without Docker)
+**El sistema estará disponible en** `http://localhost:3000`
+
+###  Ejecución Manual (Sin Docker)
+
+Si prefieres ejecutar cada servicio en una terminal separada:
 
 ```bash
 # Terminal 1 - Redis
@@ -79,146 +105,337 @@ docker run -p 6379:6379 redis:7-alpine
 # Terminal 2 - API Gateway
 npm run start:gateway
 
-# Terminal 3 - Reservations Service
+# Terminal 3 - Servicio de Reservas
 npm run start:reservas
 
-# Terminal 4 - Inventory Service
+# Terminal 4 - Servicio de Inventario
 npm run start:inventario
 
-# Terminal 5 - Payments Service
+# Terminal 5 - Servicio de Pagos
 npm run start:pagos
 
-# Terminal 6 - Notifications Service
+# Terminal 6 - Servicio de Notificaciones
 npm run start:notificaciones
 ```
 
-## Running Demos
-
-Each demo simulates and demonstrates a specific failure:
-
+###  Ver Métricas y Estado
 ```bash
-# Demo 1: Phantom Inventory
+# Estado del sistema
+curl http://localhost:3000/health
+
+# Métricas del API Gateway
+curl http://localhost:3000/metrics
+```
+
+##  Ejecución de Demos
+
+Cada demo simula un fallo específico y demuestra cómo el sistema sigue funcionando:
+
+### Demo 1️ - Inventario Fantasma
+Simula la **caída completa del servicio de inventario**.
+```bash
 npm run demo:inventario-caida
+```
+**Aprenderás:** Cómo el Circuit Breaker previene fallos en cascada.
 
-# Demo 2: Slow Gateway
+### Demo 2️ - Pasarela Lenta
+Simula el servicio de pagos respondiendo en **20 segundos**.
+```bash
 npm run demo:pasarela-lenta
+```
+**Aprenderás:** Cómo el Timeout y Retry manejan servicios lentos.
 
-# Demo 3: Request Flood
+### Demo 3️ - Diluvio de Peticiones
+Simula **100+ peticiones simultáneas** al API Gateway.
+```bash
 npm run demo:diluvio-peticiones
+```
+**Aprenderás:** Cómo Rate Limiting y Bulkhead protegen el sistema.
 
-# Demo 4: Race Condition
+### Demo 4️ - Condición de Carrera
+Múltiples usuarios intentan comprar el **último asiento**.
+```bash
 npm run demo:condicion-carrera
 ```
+**Aprenderás:** Cómo Redlock garantiza transacciones seguras.
 
-## Detailed Documentation
+---
 
-See complete documentation for each failure in:
-- [Failure #1 - Phantom Inventory](./docs/FALLO-1-INVENTARIO-FANTASMA.md)
-- [Failure #2 - Slow Gateway](./docs/FALLO-2-PASARELA-LENTA.md)
-- [Failure #3 - Request Flood](./docs/FALLO-3-DILUVIO-PETICIONES.md)
-- [Failure #4 - Race Condition](./docs/FALLO-4-CONDICION-CARRERA.md)
+**  Documentación Detallada de Cada Fallo:**
+- [Fallo #1 - Inventario Fantasma](docs/FALLO-1-INVENTARIO-FANTASMA.md)
+- [Fallo #2 - Pasarela Lenta](docs/FALLO-2-PASARELA-LENTA.md)
+- [Fallo #3 - Diluvio de Peticiones](docs/FALLO-3-DILUVIO-PETICIONES.md)
+- [Fallo #4 - Condición de Carrera](docs/FALLO-4-CONDICION-CARRERA.md)
 
-## Configuration
+##  Configuración
 
-### Environment Variables
+### Variables de Entorno
 
-**API Gateway:**
-- `PORT`: Gateway port (default: 3000)
-- `REDIS_URL`: Redis URL
-- `RESERVAS_URL`: Reservations service URL
+Crea un archivo `.env` en la raíz del proyecto:
 
-**Inventory Service:**
-- `SIMULAR_FALLO`: true/false - Simulates service outage
+```env
+# API Gateway
+API_GATEWAY_PORT=3000
+REDIS_URL=redis://localhost:6379
 
-**Payments Service:**
-- `SIMULAR_LATENCIA`: true/false - Simulates extreme latency
-- `LATENCIA_MS`: Latency milliseconds (default: 20000)
+# Servicio de Inventario
+INVENTARIO_PORT=3002
+SIMULAR_FALLO=false                    # true para activar caída simulada
 
-## Main Endpoints
+# Servicio de Pagos
+PAGOS_PORT=3003
+SIMULAR_LATENCIA=false                 # true para activar latencia simulada
+LATENCIA_MS=20000                      # Milisegundos de latencia
 
-### API Gateway
-
-```
-GET    /health                    - Health check
-GET    /api/reservas              - List reservations
-POST   /api/reservas              - Create reservation
-GET    /api/reservas/:id          - Get reservation
-GET    /metrics                   - System metrics
+# Servicio de Reservas
+RESERVAS_PORT=3001
 ```
 
-### Inventory Service
+### Configuración de Patrones
+
+Cada patrón se puede ajustar en `shared/resilience-patterns.js`:
+
+- **Circuit Breaker:** Timeout, umbral de errores, tiempo de reinicio
+- **Rate Limiting:** Límite de peticiones, ventana de tiempo
+- **Bulkhead:** Conexiones máximas por servicio
+- **Redlock:** TTL, reintentos, retardo
+
+##  API REST - Endpoints Principales
+
+###  API Gateway (`localhost:3000`)
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/health` | Verificación de salud del sistema |
+| GET | `/metrics` | Métricas y estadísticas en tiempo real |
+| GET | `/api/reservas` | Listar todas las reservas |
+| POST | `/api/reservas` | Crear una nueva reserva |
+| GET | `/api/reservas/:id` | Obtener detalles de una reserva |
+| DELETE | `/api/reservas/:id` | Cancelar una reserva |
+
+###  Servicio de Reservas (`localhost:3001`)
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/reservas` | Listar reservas |
+| POST | `/reservas` | Crear reserva (requiere lock distribuido) |
+| GET | `/reservas/:id` | Obtener detalles |
+| DELETE | `/reservas/:id` | Cancelar reserva |
+
+###  Servicio de Inventario (`localhost:3002`)
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/inventario` | Listar eventos |
+| GET | `/inventario/:eventoId` | Consultar disponibilidad |
+| POST | `/inventario/:eventoId/reservar` | Reservar asientos |
+| POST | `/inventario/:eventoId/liberar` | Liberar asientos |
+| POST | `/admin/simular-fallo` | Activar/desactivar simulación |
+
+###  Servicio de Pagos (`localhost:3003`)
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/pagos/procesar` | Procesar pago |
+| GET | `/pagos/transaccion/:id` | Consultar transacción |
+| POST | `/pagos/reembolsar` | Reembolsar pago |
+| POST | `/admin/simular-latencia` | Activar/desactivar simulación |
+
+###  Servicio de Notificaciones (`localhost:3004`)
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/notificaciones/enviar` | Enviar notificación |
+| GET | `/notificaciones/historial` | Ver historial de envíos |
+
+##  Patrones de Resiliencia Implementados
+
+### 1️ Circuit Breaker
+**Propósito:** Evitar llamadas a servicios que están caídos.
+
+- **Librería:** Opossum
+- **Timeout:** 5 segundos
+- **Umbral de error:** 50% de fallos
+- **Tiempo de reinicio:** 10-15 segundos
+- **Volumen mínimo:** 3-10 solicitudes antes de abrir el circuito
+
+**Ejemplo de uso:**
+```javascript
+const breaker = new CircuitBreaker(fetchData, {
+  timeout: 5000,
+  errorThresholdPercentage: 50
+});
+```
+
+### 2️ Retry con Backoff Exponencial
+**Propósito:** Reintentar peticiones fallidas con espera creciente.
+
+- **Máximo de intentos:** 3 reintentos
+- **Retraso inicial:** 1 segundo
+- **Factor exponencial:** 2x
+- **Retraso máximo:** 10 segundos
+
+**Secuencia:** 1s → 2s → 4s → Fallo final
+
+### 3️ Bulkhead (Aislamiento de Recursos)
+**Propósito:** Limitar conexiones simultáneas para evitar saturación.
+
+- **API Gateway → Reservas:** 50 conexiones máximas
+- **Reservas → Pagos:** 10 conexiones máximas
+
+### 4️ Rate Limiting (Limitación de Tasa)
+**Propósito:** Proteger el sistema de abuso y sobrecarga.
+
+- **Límite general:** 100 solicitudes/minuto por IP
+- **Límite de reservas:** 20 solicitudes/minuto por IP
+- **Ventana:** Deslizante de 60 segundos
+
+### 5️ Lock Distribuido (Redlock)
+**Propósito:** Garantizar exclusividad en transacciones críticas.
+
+- **TTL:** 10 segundos
+- **Reintentos:** 10 intentos
+- **Retardo base:** 200ms
+- **Jitter:** ±200ms (aleatoriedad)
+
+**Usado en:** Reservas de últimos asientos, evita race conditions.
+
+### 6️ Patrón Saga
+**Propósito:** Coordinar transacciones distribuidas entre servicios.
+
+- **Compensación automática:** Si un paso falla, se revierten los anteriores
+- **Secuencia:** Reserva → Pago → Notificación
+- **Rollback en cascada:** Si pago falla, se libera la reserva
+
+##  Conceptos Clave Demostrados
+
+| Concepto | Definición | Ejemplo en el Sistema |
+|----------|-----------|----------------------|
+| **Degradación Controlada** | El sistema sigue funcionando (con capacidad reducida) cuando falla un componente | Si pagos cae, se pone en cola la transacción |
+| **Fail Fast** | Detección rápida de fallos para evitar bloqueos prolongados | Circuit Breaker abre inmediatamente tras 50% de errores |
+| **Aislamiento de Fallos** | Un fallo no se propaga a todo el sistema | Bulkhead limita conexiones para evitar cascada |
+| **Consistencia Eventual** | Integridad de datos en entornos distribuidos | Saga asegura que todas las operaciones se completen o revierten |
+| **Transacciones Compensatorias** | Reversión automática de operaciones fallidas | Si pago falla, se libera automáticamente el asiento reservado |
+
+---
+
+##  Testing y Monitoreo
+
+### Verificar Salud del Sistema
+```bash
+curl http://localhost:3000/health
+```
+
+**Respuesta esperada:**
+```json
+{
+  "status": "healthy",
+  "services": {
+    "reservas": "up",
+    "inventario": "up",
+    "pagos": "up",
+    "notificaciones": "up"
+  },
+  "timestamp": "2026-01-28T10:30:00Z"
+}
+```
+
+### Ver Métricas en Tiempo Real
+```bash
+curl http://localhost:3000/metrics
+```
+
+Muestra estadísticas de Rate Limiting, Circuit Breakers abiertos, y latencias.
+
+### Limpiar Docker
+```bash
+# Detener todos los servicios
+docker-compose down
+
+# Eliminar volúmenes (borrar datos)
+docker-compose down -v
+
+# Ver logs de un servicio específico
+docker-compose logs -f reservas
+```
+
+---
+
+##  Stack Tecnológico
+
+| Tecnología | Propósito |
+|-----------|----------|
+| **Node.js + Express** | Runtime y framework web |
+| **Redis + ioredis** | Almacenamiento distribuido y caché |
+| **Redlock** | Locks distribuidos |
+| **Opossum** | Circuit Breaker |
+| **express-rate-limit** | Rate limiting |
+| **Axios** | Cliente HTTP |
+| **Winston** | Logging estructurado |
+| **Docker** | Contenerización |
+| **Docker Compose** | Orquestación local |
+
+---
+
+##  Estructura del Proyecto
 
 ```
-GET    /inventario                - List events
-GET    /inventario/:eventoId      - Check availability
-POST   /inventario/:eventoId/reservar  - Reserve seats
-POST   /inventario/:eventoId/liberar   - Release seats
-POST   /admin/simular-fallo       - Toggle failure simulation
+📦 SistemadeReservas
+├── 📄 docker-compose.yml          # Configuración de servicios
+├── 📄 package.json                # Dependencias del proyecto
+├── 📄 start.js                    # Script de inicio
+├── 📂 services/                   # Microservicios
+│   ├── api-gateway/               # Router central (puerto 3000)
+│   ├── reservas/                  # Gestión de reservas (puerto 3001)
+│   ├── inventario/                # Control de inventario (puerto 3002)
+│   ├── pagos/                     # Procesamiento de pagos (puerto 3003)
+│   └── notificaciones/            # Notificaciones (puerto 3004)
+├── 📂 shared/                     # Código compartido
+│   ├── logger.js                  # Utilidades de logging
+│   └── resilience-patterns.js    # Patrones de resiliencia
+├── 📂 demos/                      # Demostraciones de fallos
+│   ├── demo-inventario-fantasma.js
+│   ├── demo-pasarela-lenta.js
+│   ├── demo-diluvio-peticiones.js
+│   └── demo-condicion-carrera.js
+├── 📂 docs/                       # Documentación detallada
+│   ├── FALLO-1-INVENTARIO-FANTASMA.md
+│   ├── FALLO-2-PASARELA-LENTA.md
+│   ├── FALLO-3-DILUVIO-PETICIONES.md
+│   └── FALLO-4-CONDICION-CARRERA.md
+└── 📂 public/                     # Interfaz web (HTML/CSS/JS)
 ```
 
-### Payments Service
+---
 
-```
-POST   /pagos/procesar            - Process payment
-GET    /pagos/transaccion/:id     - Query transaction
-POST   /pagos/reembolsar          - Refund payment
-POST   /admin/simular-latencia    - Toggle latency simulation
-```
+##  Propósito Académico
 
-## Implemented Resilience Patterns
+Este proyecto fue desarrollado para la asignatura **Sistemas Distribuidos** con el objetivo de demostrar patrones avanzados de tolerancia a fallos en arquitecturas de microservicios. Es una herramienta educativa para entender cómo construir sistemas resilientes y confiables.
 
-### Circuit Breaker
-- **Library**: Opossum
-- **Configuration**: 
-  - Timeout: 5 seconds
-  - Error threshold: 50%
-  - Reset timeout: 10-15 seconds
-  - Volume threshold: 3-10 requests
+### Objetivos de Aprendizaje
+✅ Comprender fallos comunes en sistemas distribuidos  
+✅ Implementar patrones de resiliencia en la práctica  
+✅ Diseñar sistemas que degrade gracefully ante fallos  
+✅ Usar locks distribuidos para sincronización  
+✅ Coordinar transacciones entre múltiples servicios  
 
-### Retry with Exponential Backoff
-- Max 3 retries
-- Initial delay: 1 second
-- Factor: 2x
-- Max delay: 10 seconds
+---
 
-### Bulkhead Pattern
-- API Gateway → Reservations: 50 max connections
-- Reservations → Payments: 10 max connections
+##  Solución de Problemas
 
-### Rate Limiting
-- General: 100 requests/minute per IP
-- Reservations: 20 requests/minute per IP
-- 60 second sliding window
+| Problema | Solución |
+|----------|----------|
+| **Puerto ya en uso** | `lsof -i :3000` y `kill -9 <PID>` (macOS/Linux) o usar Task Manager (Windows) |
+| **Redis no conecta** | Verificar que Redis corre: `redis-cli ping` debe responder con `PONG` |
+| **Servicios no arrancan** | Ver logs: `docker-compose logs` o ejecutar sin Docker: `npm run start:gateway` |
+| **Circuit Breaker abierto** | Esperar 10-15 segundos o reiniciar el servicio fallido |
 
-### Distributed Lock (Redlock)
-- TTL: 10 seconds
-- Retry: 10 attempts
-- Delay: 200ms between attempts
-- Jitter: 200ms
+---
 
-## Academic Purpose
+##  Lectura Recomendada
 
-This project was developed for the **Distributed Systems** course to demonstrate advanced fault tolerance patterns in microservices architectures.
+- [Designing Resilient Systems](https://www.oreilly.com/library/view/) - O'Reilly
+- [Building Microservices](https://www.oreilly.com/library/view/) - Sam Newman
+- [Release It!](https://pragprog.com/titles/mnee2/release-it-second-edition/) - Michael Nygard
+- [Circuit Breaker Pattern](https://martinfowler.com/bliki/CircuitBreaker.html) - Martin Fowler
 
-### Demonstrated Concepts
-
-1. **Graceful Degradation**: System continues functioning (with reduced capacity) when a service fails
-2. **Fail Fast**: Quick failure detection to prevent prolonged blocking
-3. **Fault Isolation**: One failure doesn't cascade to the entire system
-4. **Eventual Consistency**: Maintaining data integrity in distributed environments
-5. **Compensating Transactions**: Reverting operations when part of a distributed transaction fails
-
-## Technologies Used
-
-- **Node.js + Express**: Runtime and web framework
-- **Redis + ioredis**: Storage and cache
-- **Redlock**: Distributed locks
-- **Opossum**: Circuit Breaker
-- **express-rate-limit**: Rate limiting
-- **Axios**: HTTP client
-- **Winston**: Structured logging
-- **Docker + Docker Compose**: Containerization
-
-## Author
-
-Academic project - Distributed Systems 2026
