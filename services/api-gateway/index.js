@@ -450,23 +450,24 @@ app.get('/api/ejemplos', (req, res) => {
 
 app.post('/demo/:demoName', async (req, res) => {
   const { demoName } = req.params;
-  logger.info(`Demo requested: ${demoName}`);
+  const params = req.body;
+  logger.info(`Demo requested: ${demoName} with params:`, params);
   
   try {
     let result = {};
     
     switch(demoName) {
       case 'inventario-fantasma':
-        result = await ejecutarDemoInventarioFantasma();
+        result = await ejecutarDemoInventarioFantasma(params);
         break;
       case 'pasarela-lenta':
-        result = await ejecutarDemoPasarelaLenta();
+        result = await ejecutarDemoPasarelaLenta(params);
         break;
       case 'diluvio-peticiones':
-        result = await ejecutarDemoDiluvioPeticiones();
+        result = await ejecutarDemoDiluvioPeticiones(params);
         break;
       case 'condicion-carrera':
-        result = await ejecutarDemoCondicionCarrera();
+        result = await ejecutarDemoCondicionCarrera(params);
         break;
       default:
         return res.status(400).json({ error: 'Demo desconocida' });
@@ -479,26 +480,27 @@ app.post('/demo/:demoName', async (req, res) => {
   }
 });
 
-async function ejecutarDemoInventarioFantasma() {
-  logger.info('DEMO 1: Inventario Fantasma - Activando fallo del servicio');
+async function ejecutarDemoInventarioFantasma(params = {}) {
+  const eventoId = params.eventoId || 'evento-1';
+  logger.info(`DEMO 1: Inventario Fantasma - Activando fallo del servicio para ${eventoId}`);
   
   const steps = [];
   
   try {
-    steps.push({ step: 1, action: 'Consultar inventario ANTES del fallo', status: 'iniciando' });
-    const invAntes = await inventarioClient.get('/inventario/evento-1');
+    steps.push({ step: 1, action: `Consultar inventario ANTES del fallo (${eventoId})`, status: 'iniciando' });
+    const invAntes = await inventarioClient.get(`/inventario/${eventoId}`);
     steps[0].status = 'completado';
-    steps[0].result = `Evento-1: ${invAntes.data.asientosDisponibles} asientos disponibles`;
+    steps[0].result = `${eventoId}: ${invAntes.data.asientosDisponibles} asientos disponibles`;
     
     steps.push({ step: 2, action: 'Activar fallo en servicio de inventario', status: 'iniciando' });
     await axios.post(`${INVENTARIO_URL}/admin/simular-fallo`, { activar: true });
     steps[1].status = 'completado';
     steps[1].result = 'Fallo simulado - Servicio respondiendo con errores';
     
-    steps.push({ step: 3, action: 'Intentar crear reserva con inventario caido', status: 'iniciando' });
+    steps.push({ step: 3, action: `Intentar crear reserva con inventario caido (${eventoId})`, status: 'iniciando' });
     try {
       const response = await reservasClient.post('/reservas', {
-        eventoId: 'evento-1',
+        eventoId: eventoId,
         asientos: 2,
         usuario: 'test-failover@demo.com',
         metodoPago: 'tarjeta'
@@ -537,8 +539,10 @@ async function ejecutarDemoInventarioFantasma() {
   }
 }
 
-async function ejecutarDemoPasarelaLenta() {
-  logger.info('DEMO 2: Pasarela Lenta - Probando timeouts y procesamiento asincrono');
+async function ejecutarDemoPasarelaLenta(params = {}) {
+  const eventoId = params.eventoId || 'evento-2';
+  const asientos = params.asientos || 1;
+  logger.info(`DEMO 2: Pasarela Lenta - Probando timeouts para ${eventoId} con ${asientos} asientos`);
   
   const steps = [];
   
@@ -546,13 +550,13 @@ async function ejecutarDemoPasarelaLenta() {
   await axios.post(`${PAGOS_URL}/admin/simular-latencia`, { activar: true });
   steps[0].status = 'completado';
   
-  steps.push({ step: 2, action: 'Crear reserva con timeout configurado (5s)', status: 'iniciando' });
+  steps.push({ step: 2, action: `Crear reserva para ${eventoId} con ${asientos} asientos (timeout 5s)`, status: 'iniciando' });
   const startTime = Date.now();
   
   try {
     await reservasClient.post('/reservas', {
-      eventoId: 'evento-2',
-      asientos: 1,
+      eventoId: eventoId,
+      asientos: asientos,
       usuario: 'demo-timeout@test.com',
       metodoPago: 'tarjeta'
     });
@@ -577,13 +581,14 @@ async function ejecutarDemoPasarelaLenta() {
   };
 }
 
-async function ejecutarDemoDiluvioPeticiones() {
-  logger.info('DEMO 3: Diluvio de Peticiones - Rate Limiting + Queue + Load Shedding');
+async function ejecutarDemoDiluvioPeticiones(params = {}) {
+  const requests = params.usuarios || 50;
+  const eventoId = params.eventoId || 'evento-3';
+  logger.info(`DEMO 3: Diluvio de Peticiones - ${requests} usuarios simultaneos en ${eventoId}`);
   
   const steps = [];
-  const requests = 50;
   
-  steps.push({ step: 1, action: `Enviar ${requests} peticiones simultaneas`, status: 'iniciando' });
+  steps.push({ step: 1, action: `Enviar ${requests} peticiones simultaneas para ${eventoId}`, status: 'iniciando' });
   
   const results = {
     aceptadas: 0,
@@ -596,7 +601,7 @@ async function ejecutarDemoDiluvioPeticiones() {
   for (let i = 0; i < requests; i++) {
     promises.push(
       reservasClient.post('/reservas', {
-        eventoId: 'evento-3',
+        eventoId: eventoId,
         asientos: 1,
         usuario: `stress-test-${i}@test.com`,
         metodoPago: 'tarjeta'
@@ -629,17 +634,32 @@ async function ejecutarDemoDiluvioPeticiones() {
   };
 }
 
-async function ejecutarDemoCondicionCarrera() {
-  logger.info('DEMO 4: Condicion de Carrera - Distributed Locks (Redlock)');
+async function ejecutarDemoCondicionCarrera(params = {}) {
+  const usuarios = params.usuarios || 10;
+  const asientosDisponibles = params.asientosDisponibles || 1;
+  logger.info(`DEMO 4: Condicion de Carrera - ${usuarios} usuarios compitiendo por ${asientosDisponibles} asiento(s)`);
   
   const steps = [];
   
-  steps.push({ step: 1, action: 'Simular 10 usuarios intentando reservar el ultimo asiento simultaneamente', status: 'iniciando' });
+  steps.push({ step: 1, action: `Configurar evento-4 con ${asientosDisponibles} asiento(s) disponible(s)`, status: 'iniciando' });
+  try {
+    await axios.post(`${INVENTARIO_URL}/admin/configurar-evento`, { 
+      eventoId: 'evento-4',
+      asientos: asientosDisponibles
+    });
+    steps[0].status = 'completado';
+    steps[0].result = `Evento-4 configurado con ${asientosDisponibles} asiento(s)`;
+  } catch (error) {
+    steps[0].status = 'completado';
+    steps[0].result = `Usando configuracion actual de evento-4`;
+  }
+  
+  steps.push({ step: 2, action: `Simular ${usuarios} usuarios intentando reservar simultaneamente`, status: 'iniciando' });
   
   const promises = [];
   const results = { exitosas: 0, rechazadas: 0 };
   
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < usuarios; i++) {
     promises.push(
       reservasClient.post('/reservas', {
         eventoId: 'evento-4',
@@ -656,8 +676,8 @@ async function ejecutarDemoCondicionCarrera() {
   
   await Promise.all(promises);
   
-  steps[0].status = 'completado';
-  steps[0].result = `Solo ${results.exitosas} reserva(s) exitosa(s), ${results.rechazadas} rechazadas por falta de disponibilidad`;
+  steps[1].status = 'completado';
+  steps[1].result = `De ${usuarios} usuarios: ${results.exitosas} reserva(s) exitosa(s), ${results.rechazadas} rechazadas por falta de disponibilidad`;
   
   return {
     success: true,

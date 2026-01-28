@@ -7,6 +7,37 @@ Este es un **sistema distribuido de reserva de entradas** para eventos implement
 ###  Objetivo
 Demostrar cómo construir sistemas robustos en microservicios que sigan siendo funcionales cuando diferentes componentes fallan.
 
+##  Inicio Rapido
+
+### Opcion 1: Docker (RECOMENDADO para pruebas de fallos)
+
+```powershell
+# 1. Construir e iniciar todos los servicios
+docker-compose up --build -d
+
+# 2. Acceder al panel web
+# Abre http://localhost:3000 en tu navegador
+
+# 3. Ejecutar script de pruebas automaticas
+.\test-fallos.ps1
+
+# 4. Ver documentacion completa de pruebas
+# Lee PRUEBAS_DOCKER.md
+```
+
+### Opcion 2: Ejecucion Local
+
+```powershell
+# 1. Instalar dependencias
+npm install
+
+# 2. Iniciar todos los servicios
+npm start
+
+# 3. Acceder al panel web
+# Abre http://localhost:3000 en tu navegador
+```
+
 ##  Arquitectura
 
 ```
@@ -358,6 +389,55 @@ docker-compose down -v
 # Ver logs de un servicio específico
 docker-compose logs -f reservas
 ```
+
+---
+
+##  Pruebas de Tolerancia a Fallos
+
+El sistema esta disenado para **NO colapsar** cuando ocurren fallos. Puedes probarlo de 2 formas:
+
+### Opcion 1: Script Automatico (Recomendado)
+
+```powershell
+# Ejecutar todas las pruebas automaticamente
+.\test-fallos.ps1
+```
+
+Este script prueba:
+- Apagar servicio de inventario (Circuit Breaker + Cache Fallback)
+- Inyectar latencia en pagos (Timeout Detection)
+- Apagar Redis (Fallback a memoria)
+- Ver metricas del sistema
+
+### Opcion 2: Pruebas Manuales
+
+```powershell
+# 1. Apagar servicio de inventario
+docker stop reservas-inventario
+
+# 2. Probar que sigue funcionando
+curl http://localhost:3000/api/inventario
+# Deberia responder con cache, NO error 500
+
+# 3. Recuperar servicio
+docker start reservas-inventario
+```
+
+### Opcion 3: Interfaz Web Interactiva
+
+1. Abre http://localhost:3000
+2. Ve a las demos interactivas
+3. Configura parametros (usuarios, eventos, asientos)
+4. Ejecuta y observa los logs en tiempo real
+
+### Documentacion Completa de Pruebas
+
+Consulta `PRUEBAS_DOCKER.md` para ver:
+- 7 escenarios de fallo diferentes
+- Comandos exactos para cada prueba
+- Que deberia pasar en cada caso
+- Como verificar que NO colapsa
+- Lista de patrones activados
 
 ---
 

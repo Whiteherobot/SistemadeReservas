@@ -297,6 +297,40 @@ app.post('/admin/simular-fallo', (req, res) => {
   });
 });
 
+app.post('/admin/configurar-evento', async (req, res) => {
+  const { eventoId, asientos } = req.body;
+  
+  try {
+    logger.info(`Configuring ${eventoId} with ${asientos} seats`);
+    
+    const eventoBase = {
+      'evento-1': { nombre: 'Rock Concert', precio: 50 },
+      'evento-2': { nombre: 'Classical Theater', precio: 80 },
+      'evento-3': { nombre: 'Music Festival', precio: 120 },
+      'evento-4': { nombre: 'Stand-up Comedy', precio: 30 }
+    };
+    
+    const evento = {
+      id: eventoId,
+      nombre: eventoBase[eventoId]?.nombre || 'Custom Event',
+      asientosDisponibles: asientos,
+      precio: eventoBase[eventoId]?.precio || 50
+    };
+    
+    if (redisConnected) {
+      await redis.set(`inventario:${eventoId}`, JSON.stringify(evento));
+    } else {
+      inventarioMemoria.set(eventoId, evento);
+    }
+    
+    logger.info(`${eventoId} configured successfully with ${asientos} seats`);
+    res.json({ success: true, evento });
+  } catch (error) {
+    logger.error(`Error configuring event: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   logger.info(`Inventory service listening on port ${PORT}`);
   logger.info(`Failure simulation: ${SIMULAR_FALLO ? 'ACTIVATED' : 'DEACTIVATED'}`);

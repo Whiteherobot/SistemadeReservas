@@ -164,6 +164,27 @@
             cursor: not-allowed;
         }
 
+        .demo-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+        }
+
+        .demo-label {
+            display: block;
+            color: #374151;
+            font-size: 0.85em;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
         .service-list {
             display: grid;
             gap: 10px;
@@ -298,24 +319,65 @@
                     <div class="demo-card">
                         <div class="demo-title">FALLO #1: Inventario Fantasma</div>
                         <div class="demo-description">Simula la caída total del servicio de inventario. Demuestra Circuit Breaker y Cache Fallback.</div>
+                        <div class="input-group">
+                            <label class="demo-label">Evento a consultar:</label>
+                            <select id="evento-demo1" class="demo-input">
+                                <option value="evento-1">Evento 1 (Rock Concert - 100 asientos)</option>
+                                <option value="evento-2">Evento 2 (Classical Theater - 50 asientos)</option>
+                                <option value="evento-3">Evento 3 (Music Festival - 500 asientos)</option>
+                                <option value="evento-4">Evento 4 (Stand-up Comedy - 1 asiento)</option>
+                            </select>
+                        </div>
                         <button class="demo-button" onclick="runDemo('inventario-fantasma')">Ejecutar Demo</button>
                     </div>
 
                     <div class="demo-card">
                         <div class="demo-title">FALLO #2: Pasarela Lenta</div>
                         <div class="demo-description">Pasarela de pagos responde en 20+ segundos. Demuestra Timeout y Procesamiento Asíncrono.</div>
+                        <div class="input-group">
+                            <label class="demo-label">Evento:</label>
+                            <select id="evento-demo2" class="demo-input">
+                                <option value="evento-1">Evento 1 (Rock Concert)</option>
+                                <option value="evento-2">Evento 2 (Classical Theater)</option>
+                                <option value="evento-3">Evento 3 (Music Festival)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label class="demo-label">Asientos a reservar:</label>
+                            <input type="number" id="asientos-demo2" class="demo-input" value="2" min="1" max="10">
+                        </div>
                         <button class="demo-button" onclick="runDemo('pasarela-lenta')">Ejecutar Demo</button>
                     </div>
 
                     <div class="demo-card">
                         <div class="demo-title">FALLO #3: Diluvio de Peticiones</div>
                         <div class="demo-description">Miles de usuarios simultáneos. Demuestra Rate Limiting, Queuing y Load Shedding.</div>
+                        <div class="input-group">
+                            <label class="demo-label">Numero de usuarios simultaneos:</label>
+                            <input type="number" id="usuarios-demo3" class="demo-input" value="50" min="10" max="200">
+                        </div>
+                        <div class="input-group">
+                            <label class="demo-label">Evento a reservar:</label>
+                            <select id="evento-demo3" class="demo-input">
+                                <option value="evento-1">Evento 1 (Rock Concert)</option>
+                                <option value="evento-2">Evento 2 (Classical Theater)</option>
+                                <option value="evento-3">Evento 3 (Music Festival)</option>
+                            </select>
+                        </div>
                         <button class="demo-button" onclick="runDemo('diluvio-peticiones')">Ejecutar Demo</button>
                     </div>
 
                     <div class="demo-card">
                         <div class="demo-title">FALLO #4: Condición de Carrera</div>
                         <div class="demo-description">Múltiples usuarios reservando el último asiento. Demuestra Distributed Locks (Redlock).</div>
+                        <div class="input-group">
+                            <label class="demo-label">Numero de usuarios compitiendo:</label>
+                            <input type="number" id="usuarios-demo4" class="demo-input" value="10" min="2" max="50">
+                        </div>
+                        <div class="input-group">
+                            <label class="demo-label">Asientos disponibles:</label>
+                            <input type="number" id="asientos-demo4" class="demo-input" value="1" min="1" max="5">
+                        </div>
                         <button class="demo-button" onclick="runDemo('condicion-carrera')">Ejecutar Demo</button>
                     </div>
                 </div>
@@ -465,17 +527,43 @@
             button.disabled = true;
             button.textContent = 'Ejecutando...';
             
+            let params = {};
+            
+            if (demoName === 'inventario-fantasma') {
+                params.eventoId = document.getElementById('evento-demo1').value;
+            } else if (demoName === 'pasarela-lenta') {
+                params.eventoId = document.getElementById('evento-demo2').value;
+                params.asientos = parseInt(document.getElementById('asientos-demo2').value);
+            } else if (demoName === 'diluvio-peticiones') {
+                params.usuarios = parseInt(document.getElementById('usuarios-demo3').value);
+                params.eventoId = document.getElementById('evento-demo3').value;
+            } else if (demoName === 'condicion-carrera') {
+                params.usuarios = parseInt(document.getElementById('usuarios-demo4').value);
+                params.asientosDisponibles = parseInt(document.getElementById('asientos-demo4').value);
+            }
+            
             clearLogs();
             addLog('='.repeat(80), 'info');
             addLog(`DEMO: ${demoName.toUpperCase().replace(/-/g, ' ')}`, 'info');
             addLog('='.repeat(80), 'info');
+            
+            if (Object.keys(params).length > 0) {
+                addLog('PARAMETROS:', 'info');
+                Object.entries(params).forEach(([key, value]) => {
+                    const displayKey = key.replace(/([A-Z])/g, ' $1').toUpperCase();
+                    addLog(`  ${displayKey}: ${value}`, 'info');
+                });
+                addLog('', 'info');
+            }
+            
             addLog('Cargando datos del sistema...', 'info');
             addLog('', 'info');
             
             try {
                 const response = await fetch(`${API_BASE}/demo/${demoName}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(params)
                 });
                 
                 const result = await response.json();
