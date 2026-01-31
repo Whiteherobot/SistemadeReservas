@@ -14,22 +14,22 @@ async function demo() {
 
   try {
     console.log('STEP 1: Successful reservation with inventory working\n');
-    
+
     const reservaExitosa = await axios.post(`${API_GATEWAY}/api/reservas`, {
       eventoId: 'evento-1',
       asientos: 2,
       usuario: 'usuario-demo@example.com',
       metodoPago: 'tarjeta'
     });
-    
+
     console.log('Successful reservation:', reservaExitosa.data.reserva.id);
     console.log('   Seats reserved: 2');
     console.log('   Status: ', reservaExitosa.data.reserva.estado);
-    
+
     await sleep(2000);
 
     console.log('\nSTEP 2: Simulating inventory service OUTAGE\n');
-    
+
     try {
       await axios.post(`${INVENTARIO_SERVICE}/admin/simular-fallo`, {
         activar: true
@@ -38,26 +38,26 @@ async function demo() {
     } catch (error) {
       console.log('Could not contact inventory service');
     }
-    
+
     await sleep(2000);
 
     console.log('\nSTEP 3: Attempting reservation with inventory DOWN\n');
-    
+
     for (let i = 1; i <= 5; i++) {
       console.log(`\nAttempt ${i}/5:`);
-      
+
       try {
         const response = await axios.post(`${API_GATEWAY}/api/reservas`, {
-          eventoId: 'evento-2',
+          eventoId: 'evento-1',
           asientos: 1,
           usuario: `usuario${i}@example.com`,
           metodoPago: 'tarjeta'
         }, {
           timeout: 8000
         });
-        
+
         console.log('   Reservation processed (using cache):', response.data);
-        
+
       } catch (error) {
         if (error.response) {
           console.log(`   Error ${error.response.status}: ${error.response.data.error}`);
@@ -70,12 +70,12 @@ async function demo() {
           console.log('   Error:', error.message);
         }
       }
-      
+
       await sleep(1500);
     }
 
     console.log('\nSTEP 4: Checking Circuit Breaker status\n');
-    
+
     try {
       const metrics = await axios.get(`${API_GATEWAY}/metrics`);
       console.log('Gateway Metrics:');
@@ -86,7 +86,7 @@ async function demo() {
     }
 
     console.log('\nSTEP 5: Restoring inventory service\n');
-    
+
     try {
       await axios.post(`${INVENTARIO_SERVICE}/admin/simular-fallo`, {
         activar: false
@@ -98,11 +98,11 @@ async function demo() {
 
     console.log('\nSTEP 6: Waiting for Circuit Breaker recovery...\n');
     console.log('Waiting 15 seconds for circuit breaker to close...');
-    
+
     await sleep(15000);
 
     console.log('\nSTEP 7: Reservation after recovery\n');
-    
+
     try {
       const reservaRecuperada = await axios.post(`${API_GATEWAY}/api/reservas`, {
         eventoId: 'evento-3',
@@ -110,7 +110,7 @@ async function demo() {
         usuario: 'usuario-recuperacion@example.com',
         metodoPago: 'tarjeta'
       });
-      
+
       console.log('SYSTEM RECOVERED - Successful reservation:', reservaRecuperada.data.reserva.id);
     } catch (error) {
       if (error.response) {

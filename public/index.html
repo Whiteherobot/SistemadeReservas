@@ -353,6 +353,89 @@
             grid-column: 1 / -1;
         }
 
+        .event-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .event-card {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            position: relative;
+            transition: transform 0.2s;
+        }
+
+        .event-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .event-name {
+            font-size: 1.25em;
+            font-weight: bold;
+            color: #1e293b;
+        }
+
+        .event-price {
+            font-size: 1.5em;
+            font-weight: 800;
+            color: #667eea;
+        }
+
+        .event-seats {
+            font-size: 0.9em;
+            color: #64748b;
+        }
+
+        .badge-resilience {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #fef3c7;
+            color: #92400e;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            font-weight: bold;
+            display: none;
+        }
+
+        .event-card.from-cache .badge-resilience {
+            display: block;
+        }
+
+        .booking-form {
+            display: grid;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-book {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-book:hover {
+            background: #059669;
+        }
+
+        .btn-book:disabled {
+            background: #94a3b8;
+        }
+
         @media (max-width: 1024px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -386,6 +469,20 @@
             <div class="status-card">
                 <h3>Solicitudes/min</h3>
                 <div class="status-value" id="requests">0</div>
+            </div>
+        </div>
+
+        <div class="section full-width" style="margin-bottom: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #10b981; margin-bottom: 20px; padding-bottom: 15px;">
+                <h2 style="margin-bottom: 0; border-bottom: none;">🛒 Venta de Entradas (Storefront)</h2>
+                <button class="demo-button" onclick="loadEvents()" style="width: auto; background: #10b981;">Actualizar Cartelera</button>
+            </div>
+            <p class="subtitle">Aquí puedes realizar reservas manualmente. Los datos se obtienen en tiempo real de los microservicios.</p>
+            <div id="event-grid" class="event-grid">
+                <!-- Los eventos se cargarán aquí -->
+                <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #64748b;">
+                    Cargando cartelera de eventos...
+                </div>
             </div>
         </div>
 
@@ -858,6 +955,93 @@
                 console.error('Error fetching metrics:', error);
             }
         }
+
+        async function loadEvents() {
+            addLog('Cargando eventos desde el API Gateway...', 'info');
+            const grid = document.getElementById('event-grid');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/inventario`);
+                if (!response.ok) throw new Error('Error al obtener inventario');
+                
+                const events = await response.json();
+                const fromCache = response.headers.get('X-Inventory-Cache') === 'true';
+                
+                grid.innerHTML = '';
+                events.forEach(event => {
+                    const card = document.createElement('div');
+                    card.className = `event-card ${fromCache ? 'from-cache' : ''}`;
+                    card.innerHTML = `
+                        <div class="badge-resilience">MODO RESILIENTE (CACHE)</div>
+                        <div class="event-name">${event.nombre}</div>
+                        <div class="event-price">$${event.precio}</div>
+                        <div class="event-seats">Quedan ${event.asientosDisponibles} asientos</div>
+                        <form class="booking-form" onsubmit="makeReservation(event, '${event.id}')">
+                            <input type="email" placeholder="Tu email" required class="demo-input" style="margin-bottom: 0">
+                            <input type="number" value="1" min="1" max="5" required class="demo-input" style="margin-bottom: 0">
+                            <button type="submit" class="btn-book">Reservar Ahora</button>
+                        </form>
+                    `;
+                    grid.appendChild(card);
+                });
+
+                if (fromCache) {
+                    addLog('ATENCION: Se están mostrando datos de CACHE porque el servicio de inventario falló.', 'warn');
+                } else {
+                    addLog(`Cartelera actualizada: ${events.length} eventos disponibles.`, 'success');
+                }
+            } catch (error) {
+                addLog(`Error al cargar cartelera: ${error.message}`, 'error');
+                grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #ef4444;">
+                    Error al cargar eventos. El API Gateway o el servicio de inventario podrían estar fuera de línea.
+                </div>`;
+            }
+        }
+
+        async function makeReservation(e, eventoId) {
+            e.preventDefault();
+            const form = e.target;
+            const email = form.querySelector('input[type="email"]').value;
+            const seats = parseInt(form.querySelector('input[type="number"]').value);
+            const submitBtn = form.querySelector('button');
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Procesando...';
+            addLog(`Iniciando reserva manual: ${seats} asientos para ${eventoId}...`, 'info');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/reservas`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        eventoId: eventoId,
+                        asientos: seats,
+                        usuario: email
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    addLog(`RESERVA EXITOSA: ID ${result.id}`, 'success');
+                    alert(`¡Reserva confirmada!\nID: ${result.id}\nEvento: ${result.eventoNombre}`);
+                    loadEvents(); // Recargar para actualizar asientos
+                } else {
+                    const errorMsg = result.error || result.message || 'Error desconocido';
+                    addLog(`FALLO EN RESERVA: ${errorMsg}`, 'error');
+                    alert(`Error al reservar: ${errorMsg}`);
+                }
+            } catch (error) {
+                addLog(`ERROR DE RED: No se pudo contactar con el Gateway`, 'error');
+                alert('Error de conexión. El sistema de reservas podría estar caído.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Reservar Ahora';
+            }
+        }
+
+        // Cargar eventos al inicio
+        loadEvents();
 
         updateServicesStatus();
         setInterval(updateServicesStatus, 5000);
