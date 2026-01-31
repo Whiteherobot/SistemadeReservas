@@ -43,9 +43,12 @@ redis.connect().then(() => {
 });
 
 app.use((req, res, next) => {
-  if (SIMULAR_FALLO) {
-    logger.error(`SERVICE DOWN - Simulating inventory service failure`);
-    return;
+  if (process.env.SIMULAR_FALLO === 'true' && !req.path.startsWith('/admin') && !req.path.startsWith('/health')) {
+    logger.error(`SERVICE DOWN - Simulating inventory service failure for ${req.path}`);
+    return res.status(503).json({ 
+      error: 'Service temporarily unavailable',
+      message: 'Inventory service is experiencing issues'
+    });
   }
   next();
 });
